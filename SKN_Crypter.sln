@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SKN_Crypter", "SKN_Crypter\
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "stub", "stub\stub.vcxproj", "{74A75B4D-FE90-4615-87A6-6C4C1208768D}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "payload", "payload\payload.vcxproj", "{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -31,6 +33,14 @@ Global
 		{74A75B4D-FE90-4615-87A6-6C4C1208768D}.Release|x64.Build.0 = Release|x64
 		{74A75B4D-FE90-4615-87A6-6C4C1208768D}.Release|x86.ActiveCfg = Release|Win32
 		{74A75B4D-FE90-4615-87A6-6C4C1208768D}.Release|x86.Build.0 = Release|Win32
+		{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}.Debug|x64.ActiveCfg = Debug|x64
+		{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}.Debug|x64.Build.0 = Debug|x64
+		{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}.Debug|x86.ActiveCfg = Debug|Win32
+		{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}.Debug|x86.Build.0 = Debug|Win32
+		{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}.Release|x64.ActiveCfg = Release|x64
+		{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}.Release|x64.Build.0 = Release|x64
+		{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}.Release|x86.ActiveCfg = Release|Win32
+		{2F6EF910-DC5F-4CEC-8202-71F16D2091ED}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
